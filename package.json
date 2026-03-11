@@ -33,7 +33,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc && node -e \"const fs=require('fs'),path=require('path');function cp(src,dst){if(!fs.existsSync(dst))fs.mkdirSync(dst,{recursive:true});for(const e of fs.readdirSync(src,{withFileTypes:true})){const s=path.join(src,e.name),d=path.join(dst,e.name);if(e.isDirectory())cp(s,d);else if(!e.name.endsWith('.ts'))fs.copyFileSync(s,d)}}cp('tests/fixtures','dist/tests/fixtures')\" && node scripts/prepare-dist-skill.js",
+    "build": "npx tsc && node -e \"const fs=require('fs'),path=require('path');function cp(src,dst){if(!fs.existsSync(dst))fs.mkdirSync(dst,{recursive:true});for(const e of fs.readdirSync(src,{withFileTypes:true})){const s=path.join(src,e.name),d=path.join(dst,e.name);if(e.isDirectory())cp(s,d);else if(!e.name.endsWith('.ts'))fs.copyFileSync(s,d)}}cp('tests/fixtures','dist/tests/fixtures')\" && node scripts/prepare-dist-skill.js",
     "bundle:release": "esbuild bin/cli.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist/release/openclaw-security-auditor.js",
     "release:assets": "npm run bundle:release && node scripts/make-release-assets.js",
     "build:release": "npm run build && npm run release:assets",
