@@ -22,7 +22,12 @@ jobs:
           node-version: '20.x'
           cache: npm
       - run: npm ci --include=dev --production=false
-      - run: test -d node_modules/@types/node
+      - name: Ensure @types/node present
+        run: |
+          if [ ! -d node_modules/@types/node ]; then
+            npm i --no-save @types/node
+          fi
+          node -p "require.resolve('@types/node/package.json')"
       - run: npm run lint
 
   # ── Test matrix ──────────────────────────────────────────────────────────────
