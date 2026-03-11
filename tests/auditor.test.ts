@@ -292,6 +292,50 @@ describe('scanSkillFiles — individual pattern detection', () => {
     assert.ok(findingIds(findings).includes('MAL-002'));
     fs.rmSync(dir, { recursive: true });
   });
+
+  it('does not flag documentation-only mentions in non-install SKILL.md sections', () => {
+    const dir = tmpDir('SKILL.md', [
+      '# Skill: Example',
+      '',
+      '## Description',
+      'This skill discusses bore.pub and `curl | sh` in documentation, but does not use them.',
+      '',
+      '## Install',
+      'npm install -g example-skill',
+      '',
+      '## Script',
+      'scripts/main.ts',
+    ].join('\n'));
+    const findings = scanSkillFiles(dir);
+    // Should not flag MAL-005 or MAL-008 from description text; install section is clean.
+    assert.ok(!findingIds(findings).includes('MAL-005'));
+    assert.ok(!findingIds(findings).includes('MAL-008'));
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it('skips scanning the auditor skill implementation to avoid self-triggering', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'oca-skill-'));
+    fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'SKILL.md'),
+      [
+        '# Skill: OpenClaw Security Auditor',
+        '',
+        '## Script',
+        'scripts/auditor.ts',
+      ].join('\n'),
+      'utf-8'
+    );
+    fs.writeFileSync(
+      path.join(dir, 'scripts', 'auditor.ts'),
+      "const s = 'bore.pub'; const t = '../../etc/passwd';",
+      'utf-8'
+    );
+    const findings = scanSkillFiles(dir);
+    assert.ok(!findingIds(findings).includes('MAL-005'));
+    assert.ok(!findingIds(findings).includes('MAL-028'));
+    fs.rmSync(dir, { recursive: true });
+  });
 });
 
 // ── checkConfig — vulnerable config ──────────────────────────────────────────

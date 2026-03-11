@@ -818,6 +818,9 @@ function extractVersionFromConfig(config: Record<string, unknown>): string | nul
 function checkSkillMd(content: string, filePath: string): Finding[] {
   const findings: Finding[] = [];
 
+  // Keep checks scoped to high-signal sections to avoid false positives from documentation text.
+  // SKILL.md is metadata; generic "malicious pattern" regex scans across the entire file are too noisy.
+
   // Suspicious system-level permissions
   const permMatch = content.match(/##\s*[Pp]ermissions?\s*\n([\s\S]*?)(?=##|$)/);
   if (permMatch) {
@@ -840,6 +843,69 @@ function checkSkillMd(content: string, filePath: string): Finding[] {
   const installMatch = content.match(/##\s*[Ii]nstall\s*\n([\s\S]*?)(?=##|$)/);
   if (installMatch) {
     const section = installMatch[1] ?? '';
+
+    // High-signal install command patterns (scope-limited to the Install section).
+    if (/(?:curl|wget)\s+[^|]*?\|\s*(?:ba)?sh\b/i.test(section)) {
+      findings.push({
+        id: 'MAL-008',
+        severity: 'CRITICAL',
+        category: 'MALICIOUS_SKILL',
+        title: 'Download and Execute Shell Pattern (in SKILL.md Install Section)',
+        description: 'Piping downloaded content directly to a shell executes untrusted code.',
+        file: filePath,
+        evidence: section.trim().substring(0, 200),
+        recommendation: 'Remove curl|sh / wget|bash style installers. Use signed releases or checksums.',
+      });
+    }
+    if (/bore\.pub/i.test(section)) {
+      findings.push({
+        id: 'MAL-005',
+        severity: 'CRITICAL',
+        category: 'MALICIOUS_SKILL',
+        title: 'Suspicious Tunnel Service: bore.pub (in SKILL.md Install Section)',
+        description: 'bore.pub is a tunneling service used as an exfiltration channel in ClawHavoc.',
+        file: filePath,
+        evidence: section.trim().substring(0, 200),
+        recommendation: 'Remove all bore.pub references. Legitimate skills should not use hidden tunnels.',
+      });
+    }
+    if (/(?:https?:\/\/)?(?:\d+\.)?ngrok(?:\.io|-free\.app|\.dev)/i.test(section)) {
+      findings.push({
+        id: 'MAL-006',
+        severity: 'HIGH',
+        category: 'MALICIOUS_SKILL',
+        title: 'Suspicious Tunnel Service: ngrok (in SKILL.md Install Section)',
+        description: 'ngrok tunnels can expose local services externally.',
+        file: filePath,
+        evidence: section.trim().substring(0, 200),
+        recommendation: 'Verify this is authorized; remove any tunnel-based install steps.',
+      });
+    }
+    if (/(?:serveo\.net|localhost\.run|pagekite\.me|telebit\.cloud|expose\.sh|loca\.lt)/i.test(section)) {
+      findings.push({
+        id: 'MAL-007',
+        severity: 'HIGH',
+        category: 'MALICIOUS_SKILL',
+        title: 'Suspicious Tunnel Service (in SKILL.md Install Section)',
+        description: 'Tunneling services can expose local resources or enable exfiltration.',
+        file: filePath,
+        evidence: section.trim().substring(0, 200),
+        recommendation: 'Remove unauthorized tunnel configurations.',
+      });
+    }
+    if (/msiexec\s+[^'"]*\/(?:quiet|passive|qn|qb)\b/i.test(section)) {
+      findings.push({
+        id: 'MAL-011',
+        severity: 'HIGH',
+        category: 'MALICIOUS_SKILL',
+        title: 'Silent MSI Installation (in SKILL.md Install Section)',
+        description: 'Silent MSI installation is a common malware delivery mechanism.',
+        file: filePath,
+        evidence: section.trim().substring(0, 200),
+        recommendation: 'Remove silent installation steps. Disclose and verify installers explicitly.',
+      });
+    }
+
     if (/(?:curl|wget)[^'"]*\.(exe|msi|dmg|pkg)/i.test(section)) {
       findings.push({
         id: 'MAL-030',
@@ -851,33 +917,6 @@ function checkSkillMd(content: string, filePath: string): Finding[] {
         evidence: section.trim().substring(0, 200),
         recommendation: 'Review and verify all downloads in skill installation steps.',
       });
-    }
-  }
-
-  // Prompt injection inside skill metadata
-  const lines = content.split('\n');
-  for (const inj of INJECTION_PATTERNS) {
-    const regex = new RegExp(inj.pattern.source, inj.pattern.flags);
-    let match: RegExpExecArray | null;
-    const seen = new Set<number>();
-    while ((match = regex.exec(content)) !== null) {
-      const ln = content.substring(0, match.index).split('\n').length;
-      if (!seen.has(ln)) {
-        seen.add(ln);
-        const raw = (lines[ln - 1] ?? '').trim();
-        findings.push({
-          id: inj.id,
-          severity: inj.severity,
-          category: 'PROMPT_INJECTION',
-          title: `${inj.title} (in SKILL.md)`,
-          description: inj.description,
-          file: filePath,
-          line: ln,
-          evidence: raw.length > 200 ? raw.substring(0, 200) + '…' : raw,
-          recommendation: inj.recommendation,
-        });
-      }
-      if (match.index === regex.lastIndex) regex.lastIndex++;
     }
   }
 
@@ -901,6 +940,22 @@ export function scanSkillFiles(skillsDir: string): Finding[] {
 
   const files = walkDirectory(skillsDir, SCANNABLE_EXTENSIONS);
 
+  // Detect and skip scanning this auditor skill's own implementation files.
+  // Reason: the auditor contains IOC strings and detection logic that would otherwise self-trigger.
+  const skipRoots: string[] = [];
+  for (const fp of files) {
+    if (path.basename(fp).toUpperCase() !== 'SKILL.MD') continue;
+    const content = readFileSafe(fp);
+    if (!content) continue;
+    const nameMatch = content.match(/^#\s*Skill:\s*(.+)\s*$/im);
+    const name = (nameMatch?.[1] ?? '').trim();
+    const scriptMatch = content.match(/##\s*Script\s*\n([^\n]+)/i);
+    const script = (scriptMatch?.[1] ?? '').trim();
+    if (name === 'OpenClaw Security Auditor' && /^scripts\/auditor\.(ts|js)$/i.test(script)) {
+      skipRoots.push(path.dirname(fp));
+    }
+  }
+
   if (files.length === 0) {
     findings.push({
       id: 'INF-002',
@@ -914,8 +969,22 @@ export function scanSkillFiles(skillsDir: string): Finding[] {
   }
 
   for (const filePath of files) {
+    const baseUpper = path.basename(filePath).toUpperCase();
+    const ext = path.extname(filePath).toLowerCase();
+    const isSkillMd = baseUpper === 'SKILL.MD';
+
+    if (skipRoots.some((r) => filePath.startsWith(r + path.sep)) && !isSkillMd) continue;
+
+    // Avoid noisy false positives from documentation markdown.
+    if (ext === '.md' && !isSkillMd) continue;
+
     const content = readFileSafe(filePath);
     if (content === null) continue;
+    if (isSkillMd) {
+      findings.push(...checkSkillMd(content, filePath));
+      continue;
+    }
+
     const lines = content.split('\n');
 
     for (const pat of MALICIOUS_PATTERNS) {
@@ -942,11 +1011,6 @@ export function scanSkillFiles(skillsDir: string): Finding[] {
         }
         if (m.index === regex.lastIndex) regex.lastIndex++;
       }
-    }
-
-    // Extra SKILL.md checks
-    if (path.basename(filePath).toUpperCase() === 'SKILL.MD') {
-      findings.push(...checkSkillMd(content, filePath));
     }
   }
 
