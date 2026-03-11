@@ -21,18 +21,7 @@ jobs:
         with:
           node-version: '20.x'
           cache: npm
-      - run: npm config set registry https://registry.npmjs.org/
-      - run: rm -f package-lock.json
-      - run: npm install --include=dev --production=false --registry=https://registry.npmjs.org/
-      - name: Ensure @types/node present
-        run: |
-          if [ ! -d node_modules/@types/node ]; then
-            npm i --no-save @types/node --registry=https://registry.npmjs.org/
-          fi
-          if [ ! -d node_modules/@types/node ]; then
-            echo "Missing @types/node after install"
-            exit 1
-          fi
+      - run: npm ci --registry=https://registry.npmjs.org/
       - run: npm run lint
 
   # ── Test matrix ──────────────────────────────────────────────────────────────
@@ -53,10 +42,9 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm config set registry https://registry.npmjs.org/
 
       - name: Install dependencies
-        run: npm install --include=dev --production=false --registry=https://registry.npmjs.org/
+        run: npm ci --registry=https://registry.npmjs.org/
 
       - name: Build
         run: npm run build
@@ -119,8 +107,7 @@ jobs:
         with:
           node-version: '20.x'
           cache: npm
-      - run: npm config set registry https://registry.npmjs.org/
-      - run: npm install --include=dev --production=false --registry=https://registry.npmjs.org/
+      - run: npm ci --registry=https://registry.npmjs.org/
       - run: npm run build
       - name: Audit own source code
         run: |
@@ -155,8 +142,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           cache: npm
 
-      - run: npm config set registry https://registry.npmjs.org/
-      - run: npm install --include=dev --production=false --registry=https://registry.npmjs.org/
+      - run: npm ci --registry=https://registry.npmjs.org/
       - run: npm run build
       - run: npm test
 
