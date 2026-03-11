@@ -43,8 +43,22 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
 
-      - name: Upgrade npm
-        run: npm install -g npm@10.9.2
+      - name: Bootstrap npm 10.9.2 (bypass npm 10.8.x network bug)
+        if: runner.os != 'Linux'
+        shell: node {0}
+        run: |
+          const https=require('https'),fs=require('fs'),path=require('path'),cp=require('child_process'),os=require('os');
+          const VER='10.9.2', TMP=path.join(os.tmpdir(),'npm-new.tgz'), EXT=path.join(os.tmpdir(),'npm-ext');
+          function dl(url,cb){https.get(url,r=>{if(r.statusCode>=300&&r.statusCode<400)return dl(r.headers.location,cb);const f=fs.createWriteStream(TMP);r.pipe(f);f.on('finish',()=>f.close(cb));}).on('error',e=>{console.error(e);process.exit(1)});}
+          dl('https://registry.npmjs.org/npm/-/npm-'+VER+'.tgz',()=>{
+            fs.mkdirSync(EXT,{recursive:true});
+            cp.execSync('tar -xzf "'+TMP+'" -C "'+EXT+'"');
+            const isWin=process.platform==='win32';
+            const npmDir=isWin?path.join(path.dirname(process.execPath),'node_modules','npm'):path.join(path.dirname(path.dirname(process.execPath)),'lib','node_modules','npm');
+            fs.rmSync(npmDir,{recursive:true,force:true});
+            fs.renameSync(path.join(EXT,'package'),npmDir);
+            console.log('Installed npm',VER);
+          });
 
       - name: Install dependencies
         run: npm ci --registry=https://registry.npmjs.org/
