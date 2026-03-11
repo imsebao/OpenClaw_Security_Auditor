@@ -1,5 +1,7 @@
 # OpenClaw Security Auditor
 
+**English** | [中文](README_CN.md)
+
 Security audit tool for [OpenClaw](https://github.com/openclaw/openclaw) AI assistant installations.
 
 Detects **malicious skills** (ClawHavoc / AMOS campaign), **dangerous configurations**, **known CVE exposure**, and **prompt injection risks** — with zero external dependencies.
