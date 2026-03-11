@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.js.map
+*.d.ts.map
+.omc/
+.claude/
+.env
+.env.*
+*.log
+coverage/
+.nyc_output/

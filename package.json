@@ -1,0 +1,57 @@
+{
+  "name": "openclaw-security-auditor",
+  "version": "1.0.0",
+  "description": "Security audit tool for OpenClaw AI assistant — detects malicious skills, config vulnerabilities, CVEs, and prompt injection risks",
+  "keywords": [
+    "openclaw",
+    "security",
+    "audit",
+    "malware-detection",
+    "cve",
+    "prompt-injection"
+  ],
+  "homepage": "https://github.com/openclaw-security/openclaw-security-auditor",
+  "bugs": {
+    "url": "https://github.com/openclaw-security/openclaw-security-auditor/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openclaw-security/openclaw-security-auditor.git"
+  },
+  "license": "MIT",
+  "author": "OpenClaw Security Community",
+  "bin": {
+    "openclaw-security-auditor": "./dist/bin/cli.js"
+  },
+  "main": "./dist/skill/scripts/auditor.js",
+  "types": "./dist/skill/scripts/auditor.d.ts",
+  "files": [
+    "dist/",
+    "skill/",
+    "install.sh",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc && node -e \"const fs=require('fs'),path=require('path');function cp(src,dst){if(!fs.existsSync(dst))fs.mkdirSync(dst,{recursive:true});for(const e of fs.readdirSync(src,{withFileTypes:true})){const s=path.join(src,e.name),d=path.join(dst,e.name);if(e.isDirectory())cp(s,d);else if(!e.name.endsWith('.ts'))fs.copyFileSync(s,d)}}cp('tests/fixtures','dist/tests/fixtures')\" && node scripts/prepare-dist-skill.js",
+    "bundle:release": "esbuild bin/cli.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist/release/openclaw-security-auditor.js",
+    "release:assets": "npm run bundle:release && node scripts/make-release-assets.js",
+    "build:release": "npm run build && npm run release:assets",
+    "build:watch": "tsc --watch",
+    "start": "ts-node bin/cli.ts",
+    "test": "node --test dist/tests/auditor.test.js",
+    "test:src": "ts-node --test tests/auditor.test.ts",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build && npm test",
+    "clean": "rm -rf dist"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.25.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.4.0"
+  }
+}

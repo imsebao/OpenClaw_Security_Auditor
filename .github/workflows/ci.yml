@@ -1,0 +1,163 @@
+name: CI / Publish
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Lint & Type-check ────────────────────────────────────────────────────────
+  lint:
+    name: Lint (tsc --noEmit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  # ── Test matrix ──────────────────────────────────────────────────────────────
+  test:
+    name: Test — Node ${{ matrix.node }} / ${{ matrix.os }}
+    needs: lint
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['18.x', '20.x', '22.x']
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+      - name: Smoke test — --version
+        run: node dist/bin/cli.js --version
+
+      - name: Smoke test — --help
+        run: node dist/bin/cli.js --help
+
+      - name: Smoke test — scan fixtures (should exit 2 on malicious)
+        shell: bash
+        run: |
+          set +e
+          node dist/bin/cli.js \
+            --scan-skills tests/fixtures/malicious-skill \
+            --report-format json > /tmp/audit-malicious.json
+          EXIT=$?
+          echo "Exit code: $EXIT"
+          cat /tmp/audit-malicious.json
+          [ "$EXIT" -eq 2 ] && echo "PASS: malicious fixture correctly exits 2" \
+            || (echo "FAIL: expected exit 2, got $EXIT" && exit 1)
+
+      - name: Smoke test — scan fixtures (should exit 0 on safe)
+        shell: bash
+        run: |
+          set +e
+          node dist/bin/cli.js \
+            --scan-skills tests/fixtures/safe-skill \
+            --report-format json > /tmp/audit-safe.json
+          EXIT=$?
+          echo "Exit code: $EXIT"
+          cat /tmp/audit-safe.json
+          [ "$EXIT" -eq 0 ] && echo "PASS: safe fixture correctly exits 0" \
+            || (echo "FAIL: expected exit 0, got $EXIT" && exit 1)
+
+      - name: Smoke test — vulnerable config (should exit 1+)
+        shell: bash
+        run: |
+          set +e
+          node dist/bin/cli.js \
+            --check-config tests/fixtures/configs/vulnerable.json \
+            --report-format json > /tmp/audit-config.json
+          EXIT=$?
+          echo "Exit code: $EXIT"
+          [ "$EXIT" -ge 1 ] && echo "PASS: vulnerable config detected" \
+            || (echo "FAIL: expected exit >=1, got $EXIT" && exit 1)
+
+  # ── Security self-audit ──────────────────────────────────────────────────────
+  security-selfaudit:
+    name: Security self-audit
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Audit own source code
+        run: |
+          node dist/bin/cli.js --scan-skills skill/ --report-format json \
+            | tee audit-self.json
+          # Fail if CRITICAL findings in our own code
+          node -e "
+            const r = require('./audit-self.json');
+            if (r.summary.critical > 0) {
+              console.error('CRITICAL findings in own source!');
+              process.exit(2);
+            }
+            console.log('Self-audit passed.');
+          "
+
+  # ── Publish to npm (on version tag) ─────────────────────────────────────────
+  publish-npm:
+    name: Publish to npm
+    needs: [test, security-selfaudit]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # for GitHub Release creation
+      id-token: write  # for npm provenance
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+      - name: Build GitHub Release bundles (install.sh fallback)
+        run: npm run release:assets
+
+      - name: Publish (with provenance)
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/**/*.js
+            install.sh
