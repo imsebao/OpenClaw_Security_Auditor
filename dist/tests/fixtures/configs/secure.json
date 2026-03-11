@@ -1,0 +1,39 @@
+{
+  "version": "1.2.3",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 3000,
+    "tls": {
+      "enabled": true,
+      "certFile": "/etc/openclaw/cert.pem",
+      "keyFile": "/etc/openclaw/key.pem"
+    }
+  },
+  "exec": {
+    "host": "localhost",
+    "timeout": 30000
+  },
+  "workspace": "/home/user/openclaw-workspace",
+  "auth": {
+    "bruteForceProtection": true,
+    "maxAttempts": 5,
+    "lockoutDurationMs": 300000
+  },
+  "cors": {
+    "origins": ["http://localhost:3000"]
+  },
+  "websocket": {},
+  "mcp": {
+    "servers": [
+      {
+        "name": "local-tools",
+        "host": "127.0.0.1",
+        "port": 9432
+      }
+    ]
+  },
+  "debug": false,
+  "skills": {
+    "autoUpdate": false
+  }
+}
